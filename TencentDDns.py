@@ -9,7 +9,7 @@
 import requests, urllib
 import json
 import time
-import os
+import os,sys
 import random
 
 import hashlib
@@ -19,6 +19,14 @@ import base64
 import socket
 import re
 
+def set_headers(ref):
+    """针对获得公网api的headers"""
+    headers = {
+        "Dnt": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.122 Safari/537.36",
+        "Referer": ref
+    }
+    return headers
 
 class DDNS:
     """腾讯云APIV2版本的ddns修改域名a记录解析工具 （请先随便添加相应的域名解析记录！）"""
@@ -38,14 +46,33 @@ class DDNS:
     @staticmethod
     def get_new_ip():
         """获得公网IP"""
-        ip = requests.get(url="https://api-ipv4.ip.sb/ip").text   # https://ifconfig.co/ip
-        trueIp =re.search(r'(([01]{0,1}\d{0,1}\d|2[0-4]\d|25[0-5])\.){3}([01]{0,1}\d{0,1}\d|2[0-4]\d|25[0-5])',ip)
+        apis = [
+            "https://ifconfig.co/ip",
+            "https://www.taobao.com/help/getip.php",
+            "https://ipinfo.io/ip",
+            "http://ifconfig.me/ip",
+            "http://ip.360.cn/IPShare/info",
+            "https://myip.com.tw",
+            "http://ip.xianhua.com.cn",
+            "https://www.ip.cn"
+        ]
+
+        for api in apis:
+            trueIp = None
+            try:
+                ip = requests.get(api,timeout=(3,5),headers=set_headers(api)).text
+                trueIp =re.search(r'((25[0-5]|2[0-4]\d|[01]{0,1}\d{0,1}\d)\.){3}(25[0-5]|2[0-4]\d|[01]{0,1}\d{0,1}\d)',ip)
+            except:
+                continue
+            if trueIp is not None:
+                DDNS.__log("info", "get_new_ip succeed in %s" % api )
+                break
         if trueIp is None:
             DDNS.__log("error", "get_new_ip error" )
             return ""
         return trueIp.group(0)
-
         
+
     def __get_record_ID(self, domain:str, subdomain:str):
         """获得解析列表"""
 
@@ -74,6 +101,8 @@ class DDNS:
 
         if now_ip == new_ip:
             self.__log("info", "update_record %s.%s no renew ip" % (subdomain, domain) )
+            return 0
+        if new_ip == '':
             return 0
 
 
@@ -124,13 +153,14 @@ class DDNS:
         }
         param = self.__Signature(dict(**basic_param, **data))
         try:
-            r = json.loads(requests.get(url="https://" + self.api_url,params=param,headers=self.headers).text)
-            if (r["code"] == 0):
+            r = json.loads(requests.get(url="https://" + self.api_url,params=param,headers=self.headers,timeout=(3,5)).text)
+            if ("code" in r) and (r["code"] == 0):
                 self.__log("success", "__send_data success")
                 if "data" in r:
                     return r["data"]
             else:
                 self.__log("error", "__send_data error %s" % (r["codeDesc"]) )
+                return -1
         except:
             self.__log("error", "__send_data requests error" )
             return -1
@@ -144,6 +174,11 @@ if __name__ == "__main__":
     SecretKey = "******************" # SecretKey
     Domain = "*****" #域名
 
-    d = DDNS(SecretId, SecretKey)
-    d.update_record(Domain, "sub")  # 子域名
-    # d.update_record(Domain, "*.a") # 子域名下的泛域名
+    try:
+        d = DDNS(SecretId, SecretKey)
+        d.update_record(Domain, "a")
+        # d.update_record(Domain, "*.a")
+    except Exception as msg:
+        print("%s [%s] %s" % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), 'error', 'run error:'+str(msg)) )
+        sys.exit(1)
+    sys.exit(0)
